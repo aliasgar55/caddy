@@ -369,7 +369,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	errLog = errLog.With(zap.Duration("duration", duration))
 	errLoggers := []*zap.Logger{errLog}
 	if s.Logs != nil {
-		errLoggers = s.Logs.wrapLogger(errLog, r.Host)
+		errLoggers = s.Logs.wrapLogger(errLog, r)
 	}
 
 	// get the values that will be used to log the error
@@ -778,17 +778,20 @@ func (s *Server) logRequest(
 
 	loggers := []*zap.Logger{accLog}
 	if s.Logs != nil {
-		loggers = s.Logs.wrapLogger(accLog, r.Host)
+		loggers = s.Logs.wrapLogger(accLog, r)
 	}
 
 	// wrapping may return multiple loggers, so we log to all of them
 	for _, logger := range loggers {
 		logAtLevel := logger.Info
-		if wrec.Status() >= 400 {
+		if wrec.Status() >= 500 {
 			logAtLevel = logger.Error
 		}
-
-		logAtLevel("handled request", fields...)
+		message := "handled request"
+		if nop, ok := GetVar(r.Context(), "unhandled").(bool); ok && nop {
+			message = "NOP"
+		}
+		logAtLevel(message, fields...)
 	}
 }
 
@@ -832,7 +835,6 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	ctx = context.WithValue(ctx, OriginalRequestCtxKey, originalRequest(r, &url2))
 
 	ctx = context.WithValue(ctx, ExtraLogFieldsCtxKey, new(ExtraLogFields))
-
 	r = r.WithContext(ctx)
 
 	// once the pointer to the request won't change
